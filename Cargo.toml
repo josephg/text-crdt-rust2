@@ -1,0 +1,20 @@
+[package]
+name = "text-crdt-rust2"
+version = "0.1.0"
+authors = ["Seph Gentle <me@josephg.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+skiplist = { path = "../../skiplistrs" }
+
+inlinable_string = "0.1.11"
+ropey = "1.1.0"
+smallvec = "1.4.0"
+criterion = "0.3.3"
+
+
+[[bench]]
+name = "benchmark"
+harness = false
