@@ -160,7 +160,7 @@ impl CRDTState {
         // Needed to work around the borrow checker.
         let client_data = &mut self.client_data;
 
-        let mut edit = self.document_index.edit_notify(pos, |items, marker| {
+        let (mut edit, offset) = self.document_index.edit_notify(pos, |items, marker| {
             for item in items {
                 let loc = item.loc;
                 let ops = &mut client_data[loc.client as usize].ops;
@@ -169,18 +169,25 @@ impl CRDTState {
                 }
             }
         });
-        let (parent, needs_insert) = match edit.prev_item() {
+
+        let prev_item = if offset == 0 { edit.prev_item() }
+        else { edit.current_item() };
+
+        let (parent, needs_insert) = match prev_item {
             None => (CRDT_DOC_ROOT, true),
-            Some((prev, offset)) => {
+            Some(prev) => {
                 // Try and append to the end of the item.
                 // println!("prev {:?} offset {:?}", prev, offset);
                 let parent = CRDTLocation {
                     client: prev.loc.client,
                     seq: prev.loc.seq + offset as u32
                 };
-                if true {// prev.loc.client == client_id && offset == prev.len as usize && prev.loc.seq + prev.len == new_item.loc.seq {
+                // if false {
+                if offset == 0
+                    && prev.loc.client == client_id
+                    && prev.loc.seq + prev.len == new_item.loc.seq {
                     // Modify in place
-                    edit.modify_prev_item(|item, _| {
+                    edit.modify_prev_item(|item| {
                         item.len += inserted_length as u32;
                         item.content += inserted_length as u32;
                     });
@@ -191,11 +198,6 @@ impl CRDTState {
         };
 
         if needs_insert { edit.insert(new_item); }
-
-        // let dangling_ptr = ptr::NonNull::dangling();
-        // ops.resize(ops.len() + inserted_length, dangling_ptr);
-
-        // let client_data = &mut self.client_data;
 
         parent
     }
