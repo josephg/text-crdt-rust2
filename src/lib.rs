@@ -1,4 +1,4 @@
-
+use smallvec::SmallVec;
 use skiplist::*;
 use inlinable_string::InlinableString;
 // use std::ptr;
@@ -52,26 +52,29 @@ pub struct ListItem {
 
     // TODO.
     parent: (),
+
+
+    
+    // RGA
+    // children: SmallVec<[CRDTLocation; 2]>,
+
 }
 
-struct Config;
 
-impl ListConfig for Config {
-    type Item = ListItem;
+impl skiplist::ListItem for ListItem {
+    fn get_usersize(&self) -> usize { self.len as usize }
 
-    fn get_usersize(item: &Self::Item) -> usize { item.len as usize }
-
-    fn split_item(item: &Self::Item, at: usize) -> (Self::Item, Self::Item) {
+    fn split_item(&self, at: usize) -> (Self, Self) {
         println!("Split!");
         let at_u32 = at as u32;
-        assert!(at_u32 < item.len);
+        assert!(at_u32 < self.len);
         (ListItem {
-            loc: item.loc, len: at_u32, content: at_u32, parent: ()
+            loc: self.loc, len: at_u32, content: at_u32, parent: ()
         }, ListItem {
             loc: CRDTLocation {
-                client: item.loc.client,
-                seq: item.loc.seq + at_u32,
-            }, len: item.len - at_u32, content: item.len - at_u32, parent: ()
+                client: self.loc.client,
+                seq: self.loc.seq + at_u32,
+            }, len: self.len - at_u32, content: self.len - at_u32, parent: ()
         })
     }
 }
@@ -84,7 +87,7 @@ pub enum OpAction {
     Delete(u32)
 }
 
-type Marker = ItemMarker<Config>;
+type Marker = ItemMarker<ListItem>;
 
 
 // #[derive(Debug)]
@@ -100,14 +103,28 @@ struct ClientData {
     ops: Vec<Marker>
 }
 
+type HistoricalData = Vec<ClientData>;
+
 // #[derive(Debug)]
 pub struct CRDTState {
-    client_data: Vec<ClientData>,
+    client_data: HistoricalData,
 
-    document_index: SkipList<Config>
+    document_index: SkipList<ListItem, HistoricalData>
     // document_index: Pin<Box<MarkerTree>>,
 
     // ops_from_client: Vec<Vec<
+}
+
+impl NotifyTarget<ListItem> for HistoricalData {
+    fn notify(&mut self, items: &[ListItem], marker: ItemMarker<ListItem>) {
+        for item in items {
+            let loc = item.loc;
+            let ops = &mut self[loc.client as usize].ops;
+            for op in &mut ops[loc.seq as usize..(loc.seq+item.len) as usize] {
+                *op = marker;
+            }
+        }
+    }
 }
 
 // fn notify(items: &[ListItem], marker: Marker) {
@@ -160,15 +177,7 @@ impl CRDTState {
         // Needed to work around the borrow checker.
         let client_data = &mut self.client_data;
 
-        let (mut edit, offset) = self.document_index.edit_notify(pos, |items, marker| {
-            for item in items {
-                let loc = item.loc;
-                let ops = &mut client_data[loc.client as usize].ops;
-                for op in &mut ops[loc.seq as usize..(loc.seq+item.len) as usize] {
-                    *op = marker;
-                }
-            }
-        });
+        let (mut edit, offset) = self.document_index.edit_n(client_data, pos);
 
         let prev_item = if offset == 0 { edit.prev_item() }
         else { edit.current_item() };
